@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: watch
+          POSTGRES_PASSWORD: watch
+          POSTGRES_DB: watchstore
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U watch" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://watch:watch@localhost:5432/watchstore
+      DIRECT_URL: postgresql://watch:watch@localhost:5432/watchstore
+      AUTH_SECRET: ci-only-secret-not-used-anywhere-else
+      NEXT_PUBLIC_SITE_URL: http://localhost:3100
+      SEED_ADMIN_PHONE: '9999999999'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm prisma migrate deploy
+      - run: pnpm db:seed
+      - run: pnpm test
+      - run: pnpm build:app
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
