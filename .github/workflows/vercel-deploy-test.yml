@@ -1,0 +1,24 @@
+name: Vercel deploy test
+
+# Vercel's GitHub integration reports each deployment back to GitHub.
+# When one succeeds, check that the deployed site actually serves this repo's files.
+on: deployment_status
+
+jobs:
+  smoke:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployed site
+        env:
+          URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          # Only needed if Vercel Deployment Protection is on (Settings → Deployment Protection).
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          echo "Testing $URL"
+          headers=()
+          if [ -n "$BYPASS" ]; then headers=(-H "x-vercel-protection-bypass: $BYPASS"); fi
+          curl -fsS "${headers[@]}" "$URL/" | grep -q 'vercel-deploy-test-ok'
+          curl -fsS "${headers[@]}" "$URL/health.json" | grep -q '"status": "ok"'
+          echo "Deployment at $URL passed."
